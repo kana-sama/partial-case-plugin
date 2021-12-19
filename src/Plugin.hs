@@ -1,48 +1,27 @@
 {-# LANGUAGE BlockArguments #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ImportQualifiedPost #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE PartialTypeSignatures #-}
 {-# LANGUAGE PatternSynonyms #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# OPTIONS_GHC -Wno-partial-type-signatures #-}
 
 module Plugin (plugin) where
 
-import Control.Lens
-import Data.Generics.Labels ()
 import Data.Generics.Uniplate.Data qualified as Uniplate
 import Data.String (fromString)
-import GHC.Generics (Generic)
 import GHC.Hs
 import GhcPlugins
-
-deriving stock instance Generic HsParsedModule
-
-deriving stock instance Generic (HsModule pass)
-
-deriving stock instance Generic (MatchGroup pass e)
-
-deriving stock instance Generic (Match pass e)
-
-deriving stock instance Generic (GRHSs pass e)
-
-deriving stock instance Generic (GRHS pass e)
 
 rdrNameString :: RdrName -> String
 rdrNameString = occNameString . rdrNameOcc
 
-loc :: Traversal' (Located a) a
-loc = traverse
-
 plugin :: Plugin
-plugin = defaultPlugin {parsedResultAction = \_ _ mod -> pure (mod & #hpm_module . loc %~ transformModule)}
+plugin = defaultPlugin {parsedResultAction}
+  where
+    parsedResultAction _ _ mod@HsParsedModule {hpm_module = L l x} =
+      pure mod {hpm_module = L l (transformModule x)}
 
 pattern Partial :: LHsExpr GhcPs
 pattern Partial <- L _ (HsVar _ (L _ (rdrNameString -> "partial")))
@@ -55,16 +34,14 @@ fallback = Match NoExtField CaseAlt [noLoc (WildPat NoExtField)] (GRHSs NoExtFie
 
 transformModule :: HsModule GhcPs -> HsModule GhcPs
 transformModule = Uniplate.transformBi \case
-  HsApp _ Partial (L l (HsCase _ expr mgroup)) ->
+  HsApp _ Partial (L _ (HsCase _ expr mgroup)) ->
     HsCase NoExtField expr (addFallback (wrapPure mgroup))
-  HsApp _ Partial (L l (HsLamCase _ mgroup)) ->
+  HsApp _ Partial (L _ (HsLamCase _ mgroup)) ->
     HsLamCase NoExtField (addFallback (wrapPure mgroup))
   other -> other
 
 wrapPure :: MatchGroup GhcPs (LHsExpr GhcPs) -> MatchGroup GhcPs (LHsExpr GhcPs)
-wrapPure =
-  #_MG . simple . _2 . loc . each . loc . #_Match . simple . _4 . #_GRHSs . simple . _2 . each . loc . #_GRHS . simple . _3 . loc
-    %~ HsApp NoExtField (mkVar "pure") . noLoc
+wrapPure = Uniplate.descendBi (HsApp NoExtField (mkVar "pure") . noLoc)
 
 addFallback :: MatchGroup GhcPs (LHsExpr GhcPs) -> MatchGroup GhcPs (LHsExpr GhcPs)
-addFallback = #_MG . simple . _2 . loc <>~ [noLoc fallback]
+addFallback = Uniplate.descendBi (++ [noLoc fallback :: LMatch _ _])
