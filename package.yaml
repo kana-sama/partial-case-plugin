@@ -1,0 +1,22 @@
+name: partial-case-plugin
+
+dependencies:
+  - base == 4.14.3.0
+
+executables:
+  partial-case-plugin-exe:
+    main: Main.hs
+    source-dirs: app
+    ghc-options:
+      - -threaded
+      - -rtsopts
+    dependencies:
+      - partial-case-plugin
+
+library:
+  source-dirs: src
+  dependencies:
+    - ghc
+    - lens
+    - generic-lens
+    - uniplate
