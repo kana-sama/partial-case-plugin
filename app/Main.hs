@@ -2,7 +2,6 @@
 {-# LANGUAGE LambdaCase #-}
 {-# OPTIONS_GHC -fplugin=Plugin #-}
 
-import Control.Applicative
 import Data.Foldable
 
 f x = partial case x of

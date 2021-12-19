@@ -21,19 +21,41 @@ plugin :: Plugin
 plugin = defaultPlugin {parsedResultAction}
   where
     parsedResultAction _ _ mod@HsParsedModule {hpm_module = L l x} =
-      pure mod {hpm_module = L l (transformModule x)}
+      pure mod {hpm_module = L l (addImport (transformPartial x))}
 
 pattern Partial :: LHsExpr GhcPs
 pattern Partial <- L _ (HsVar _ (L _ (rdrNameString -> "partial")))
 
-mkVar :: String -> LHsExpr GhcPs
-mkVar var = noLoc (HsVar NoExtField (noLoc (mkVarUnqual (fromString var))))
+controlApplicativeVar :: String -> LHsExpr GhcPs
+controlApplicativeVar var = noLoc (HsVar NoExtField (noLoc (mkRdrQual controlApplicativeAlias (mkVarOcc var))))
 
-fallback :: Match GhcPs (LHsExpr GhcPs)
-fallback = Match NoExtField CaseAlt [noLoc (WildPat NoExtField)] (GRHSs NoExtField [noLoc (GRHS NoExtField [] (mkVar "empty"))] (noLoc (EmptyLocalBinds NoExtField)))
+controlApplicativeAlias :: ModuleName
+controlApplicativeAlias = mkModuleName "PartialCasePlugin.Control.Applicative"
 
-transformModule :: HsModule GhcPs -> HsModule GhcPs
-transformModule = Uniplate.transformBi \case
+controlApplicativeImport :: LImportDecl GhcPs
+controlApplicativeImport =
+  noLoc
+    ImportDecl
+      { ideclExt = NoExtField,
+        ideclSourceSrc = NoSourceText,
+        ideclName = noLoc (mkModuleName "Control.Applicative"),
+        ideclPkgQual = Nothing,
+        ideclSource = False,
+        ideclSafe = False,
+        ideclQualified = QualifiedPre,
+        ideclImplicit = False,
+        ideclAs = Just (noLoc controlApplicativeAlias),
+        ideclHiding = Nothing
+      }
+
+fallback :: LMatch GhcPs (LHsExpr GhcPs)
+fallback = noLoc (Match NoExtField CaseAlt [noLoc (WildPat NoExtField)] (GRHSs NoExtField [noLoc (GRHS NoExtField [] (controlApplicativeVar "empty"))] (noLoc (EmptyLocalBinds NoExtField))))
+
+addImport :: HsModule GhcPs -> HsModule GhcPs
+addImport = Uniplate.descendBi (++ [controlApplicativeImport])
+
+transformPartial :: HsModule GhcPs -> HsModule GhcPs
+transformPartial = Uniplate.transformBi \case
   HsApp _ Partial (L _ (HsCase _ expr mgroup)) ->
     HsCase NoExtField expr (addFallback (wrapPure mgroup))
   HsApp _ Partial (L _ (HsLamCase _ mgroup)) ->
@@ -41,7 +63,7 @@ transformModule = Uniplate.transformBi \case
   other -> other
 
 wrapPure :: MatchGroup GhcPs (LHsExpr GhcPs) -> MatchGroup GhcPs (LHsExpr GhcPs)
-wrapPure = Uniplate.descendBi (HsApp NoExtField (mkVar "pure") . noLoc)
+wrapPure = Uniplate.descendBi (HsApp NoExtField (controlApplicativeVar "pure") . noLoc)
 
 addFallback :: MatchGroup GhcPs (LHsExpr GhcPs) -> MatchGroup GhcPs (LHsExpr GhcPs)
-addFallback = Uniplate.descendBi (++ [noLoc fallback :: LMatch _ _])
+addFallback = Uniplate.descendBi (++ [fallback])
