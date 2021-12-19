@@ -12,14 +12,16 @@ module Plugin (plugin) where
 import Data.Generics.Uniplate.Data qualified as Uniplate
 import Data.String (fromString)
 import GHC.Hs
+import GHC.LanguageExtensions.Type (Extension (BlockArguments))
 import GhcPlugins
 
 rdrNameString :: RdrName -> String
 rdrNameString = occNameString . rdrNameOcc
 
 plugin :: Plugin
-plugin = defaultPlugin {parsedResultAction}
+plugin = defaultPlugin {dynflagsPlugin, parsedResultAction}
   where
+    dynflagsPlugin opts flags = pure (xopt_set flags BlockArguments)
     parsedResultAction _ _ mod@HsParsedModule {hpm_module = L l x} =
       pure mod {hpm_module = L l (addImport (transformPartial x))}
 

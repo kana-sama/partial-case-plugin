@@ -17,4 +17,5 @@ library:
   source-dirs: src
   dependencies:
     - ghc
+    - ghc-boot-th
     - uniplate
